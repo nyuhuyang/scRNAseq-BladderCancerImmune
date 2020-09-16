@@ -1,15 +1,10 @@
 #devtools::install_github('dviraran/SingleR')
 library(Seurat)
 library(SeuratDisk)
-source("https://raw.githubusercontent.com/nyuhuyang/SeuratExtra/master/R/SingleR_functions.R")
 source("https://raw.githubusercontent.com/nyuhuyang/SeuratExtra/master/R/Seurat3_functions.R")
 path <- paste0("output/",gsub("-","",Sys.Date()),"/")
 if(!dir.exists(path)) dir.create(path, recursive = T)
 #====== 3.1 Create Singler Object  ==========================================
-# conda activate r3.6.2
-#Convert(paste0("output/20200728_SCT.h5ad"), 
-#        dest = paste0("output/20200728_SCT.h5seurat"), overwrite = F)
-#object <- LoadH5Seurat("output/20200728_SCT.h5seurat")
 
 # conda activate r4.0.2
 library(SingleR)
