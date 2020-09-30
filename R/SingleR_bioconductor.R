@@ -5,7 +5,6 @@ source("https://raw.githubusercontent.com/nyuhuyang/SeuratExtra/master/R/Seurat3
 path <- paste0("output/",gsub("-","",Sys.Date()),"/")
 if(!dir.exists(path)) dir.create(path, recursive = T)
 #====== 3.1 Create Singler Object  ==========================================
-
 # conda activate r4.0.2
 library(SingleR)
 library(SingleCellExperiment)
