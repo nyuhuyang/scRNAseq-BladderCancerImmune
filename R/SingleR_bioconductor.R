@@ -22,16 +22,23 @@ rownames(meta_data) = colnames(log_counts)
 log_counts <- as.data.frame(sapply(log_counts, as.numeric))
 rownames(log_counts) = genes
 
-sce <- SingleCellExperiment(list(logcounts=log_counts),
+scBLCA.sce <- SingleCellExperiment(list(logcounts=log_counts),
                                 colData=DataFrame(meta_data))
+
+# read BladderCancerImmune data
+scBLCA_seurat = readRDS("data/20200914_BladderCancerImmune.rds")
+log_counts = as.matrix(scBLCA_seurat[["RNA"]]@data)
+scBLCA.sce <- new("ExpressionSet", log_counts = as.matrix(scBLCA_seurat[["RNA"]]@data),
+                  phenoData = AnnotatedDataFrame(scBLCA_seurat@meta.data))
+
 # ====== load reference =============
 blue_encode <- BlueprintEncodeData()
-remove = grepl("CD4|CD8|Tregs|B-cells",blue_encode$label.fine)
+remove = grepl("CD4|CD8|Tregs|B-cells|Monocytes|Macrophages$",blue_encode$label.fine)
 blue_encode = blue_encode[,!remove]
 
 immue_exp <- DatabaseImmuneCellExpressionData()
 
-common <- Reduce(intersect, list(rownames(sce), 
+common <- Reduce(intersect, list(rownames(scBLCA.sce), 
                                  rownames(blue_encode),
                                  rownames(immue_exp)))
 length(common)
@@ -40,9 +47,9 @@ combine_ref = do.call("cbind", list(blue_encode[common,],
 table(combine_ref$label.fine)
 system.time(trained <- trainSingleR(ref = combine_ref,
                                     labels=combine_ref$label.fine))
-system.time(pred <- classifySingleR(sce[common,], trained))
+system.time(pred <- classifySingleR(scBLCA.sce[common,], trained))
 # elapsed 4872.846 sec
-saveRDS(object = pred, file = "output/20200915_singleR_pred.rds")
+saveRDS(object = pred, file = "output/20201118_singleR_pred.rds")
 
 
 meta_data$barcode = rownames(meta_data)
