@@ -3,7 +3,10 @@ library(DT)
 library(ggplot2)
 library(GGally)
 library(kableExtra)
+
 source("https://raw.githubusercontent.com/nyuhuyang/SeuratExtra/master/R/Seurat3_functions.R")
+path <- paste0("output/",gsub("-","",Sys.Date()),"/")
+if(!dir.exists(path)) dir.create(path, recursive = T)
 # meta_data
 TCGA_deconvolution_clinical <- read.csv("jupyter/TCGA_deconvolution_clinical.csv")
 
@@ -90,20 +93,20 @@ meta_data = as.data.frame(cbind(BLCA_seurat@meta.data[,c(names(cellGroups),#"sub
 meta_data = as.data.frame(sapply(meta_data,as.numeric))
 
 meta_data[,"scale_log_days_to_death"] = scale(log(meta_data$subtype_Combined.days.to.last.followup.or.death+1))
-meta_data = meta_data[,-grep("^subtype_Combined.days.to.last.followup.or.death$",colnames(meta_data))]
-glm.fit <- glm(formula = scale_log_days_to_death ~ . -subtype_Combined.days.to.last.followup.or.death,
-               data = meta_data, family = gaussian)
+meta_data1 = meta_data[,-grep("^subtype_Combined.days.to.last.followup.or.death$",colnames(meta_data))]
+glm.fit <- glm(formula = scale_log_days_to_death ~ .,
+               data = meta_data1, family = gaussian)
 summary(glm.fit)
 
-glm.fit1 <- glm(formula = scale_log_days_to_death ~ `Macrophages.M1` + Macrophages.M2 + Macrophages +
+glm.fit1 <- glm(formula = scale_log_days_to_death ~ `Macrophages M1` + `Macrophages M2` + Macrophages +
                     HSC ,
-               data = meta_data, family = gaussian)
+               data = meta_data1, family = gaussian)
 summary(glm.fit1)
 
 
 jpeg(paste0(path,"glm_Macrophages.M1.jpeg"), units="in", width=10, height=7,res=600)
 ggplot(meta_data,aes(x=subtype_Combined.days.to.last.followup.or.death,
-                     y=`Macrophages.M1`,color=HSC))+geom_point()+
+                     y=`Macrophages M1`,color=HSC))+geom_point()+
     stat_cor(method = "spearman",label.x = 3000, label.y = 0.025)+
     ggtitle("Days.until.death vs Macrophages M1 %") + TitleCenter()
 dev.off()
@@ -139,3 +142,69 @@ GGally::ggcorr(data =meta_data,
                color = "grey50")+
     ggtitle("Correlation of each attribute in deconvolution data")+
     theme(plot.title = element_text(hjust = 0.5))
+
+
+# calculate survive curve=========
+library(survminer)
+library(survival)
+meta_data = as.data.frame(cbind(BLCA_seurat@meta.data[,c("days_to_death",
+                                                         "subtype_Combined.days.to.last.followup.or.death",
+                                                         names(cellGroups))],
+                                prop_main))
+meta_data = as.data.frame(sapply(meta_data,as.numeric))
+Cell_types <- c(names(cellGroups),colnames(prop_main))
+#Create a Survival Object
+meta_data$status = plyr::mapvalues(is.na(meta_data$days_to_death),
+                                   from = c(TRUE,FALSE),
+                                   to = c(1,0))
+meta_data[,"Overall survival (year)"] = meta_data$subtype_Combined.days.to.last.followup.or.death/365
+#meta_data[,"Survival rate"] = rank(meta_data$subtype_Combined.days.to.last.followup.or.death)
+# range(meta_data[,"Survival rate"]) = [?, 411]
+#meta_data[,"Survival rate"] = (meta_data[,"Survival rate"] - min(meta_data[,"Survival rate"]))/max(meta_data[,"Survival rate"])
+
+for(i in seq_along(Cell_types)) {
+    cell_type = Cell_types[i]
+    cut_function = ifelse(median(meta_data[,cell_type]) ==0, "posi_neg","high_low")
+    cut_label= switch (cut_function,
+                       "posi_neg" = c("Positive","Negative"),
+                       "high_low" = c("High","Low"))
+    if(all(meta_data[,cell_type] ==0)) next
+    meta_data[,cut_function] = switch (cut_function,
+                            "posi_neg" = plyr::mapvalues(meta_data[,cell_type] >0,
+                                                         from = c(TRUE,FALSE),
+                                                         to = c("Positive","Negative")),
+                            "high_low" = plyr::mapvalues(as.numeric(cut(meta_data[,cell_type],2)) %% 2,
+                                                         from = c(1,0),
+                                                         to = c("High","Low"))
+                            )
+    fit <- switch (cut_function,
+                   "posi_neg" = survfit(Surv(`Overall survival (year)`, status) ~ posi_neg, data = meta_data),
+                   "high_low" = survfit(Surv(`Overall survival (year)`, status) ~ high_low, data = meta_data)
+    )
+    # if too little data for one side, skip
+    lvl <- sort(as.vector(table(meta_data[,cut_function])))
+    if(lvl[1] < 3 | lvl[2] < 3) next
+    g <- ggsurvplot(
+        fit,
+        censor.shape="|", censor.size = 4,
+        data = meta_data,
+        size = 1,                 # change line size
+        palette =
+            c("#E7B800", "#2E9FDF"),# custom color palettes
+        conf.int = TRUE,          # Add confidence interval
+        pval = TRUE,              # Add p-value
+        legend.title = cell_type,
+        risk.table = TRUE,        # Add risk table
+        risk.table.col = "strata",# Risk table color by groups
+        legend.labs = cut_label,    # Change legend labels
+        risk.table.height = 0.25, # Useful to change when you have multiple groups
+        ggtheme = theme_bw(),      # Change ggplot2 theme
+        xlab = "Overall survival (year)"
+    )
+    jpeg(paste0(path,"ggsurvplot_",cell_type,".jpeg"), units="in", width=7, height=7,res=600)
+    print(g)
+    dev.off()
+    svMisc::progress(i, length(Cell_types))
+}
+
+
