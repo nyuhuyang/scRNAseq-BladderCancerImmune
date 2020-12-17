@@ -7,6 +7,7 @@ library(MuSiC)
 library(xbioc)
 library(Biobase)
 library(BisqueRNA)
+library(TCGAbiolinks)
 source("https://raw.githubusercontent.com/nyuhuyang/SeuratExtra/master/R/Seurat3_functions.R")
 
 path <- paste0("output/",gsub("-","",Sys.Date()),"/")
@@ -72,6 +73,12 @@ assays(exp)[[1]][1:4,1:4]
 genes = gsub("\\|.*","",rownames(assays(exp)$raw_count))
 raw_count <- assays(exp)$raw_count[!duplicated(genes),]
 rownames(raw_count) = gsub("\\|.*","",rownames(raw_count))
+
+raw_count <- as.data.frame(raw_count) %>% rownames_to_column
+colnames(raw_count)[1] = "gene_symbol"
+raw_count[1:4,1:4];class(raw_count)
+data.table::fwrite(raw_count,file =paste0(path,"TCGA-BLCA_LAML_FPKM.txt"),
+                   sep = "\t",row.names = FALSE, col.names = TRUE)
 
 # 2 Process TCGA data and visualization
 BLCA_seurat <- CreateSeuratObject(counts = raw_count, project = "TCGA-BLCA",

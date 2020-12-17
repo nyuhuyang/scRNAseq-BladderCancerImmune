@@ -3,6 +3,7 @@ library(DT)
 library(ggplot2)
 library(GGally)
 library(kableExtra)
+library(kable)
 
 source("https://raw.githubusercontent.com/nyuhuyang/SeuratExtra/master/R/Seurat3_functions.R")
 path <- paste0("output/",gsub("-","",Sys.Date()),"/")
@@ -145,66 +146,77 @@ GGally::ggcorr(data =meta_data,
 
 
 # calculate survive curve=========
-library(survminer)
-library(survival)
-meta_data = as.data.frame(cbind(BLCA_seurat@meta.data[,c("days_to_death",
+
+
+meta.data = as.data.frame(cbind(BLCA_seurat@meta.data[,c("days_to_death",
                                                          "subtype_Combined.days.to.last.followup.or.death",
                                                          names(cellGroups))],
                                 prop_main))
-meta_data = as.data.frame(sapply(meta_data,as.numeric))
-Cell_types <- c(names(cellGroups),colnames(prop_main))
-#Create a Survival Object
-meta_data$status = plyr::mapvalues(is.na(meta_data$days_to_death),
-                                   from = c(TRUE,FALSE),
-                                   to = c(1,0))
-meta_data[,"Overall survival (year)"] = meta_data$subtype_Combined.days.to.last.followup.or.death/365
+
+calculate_survive_curve <- function(meta_data, Cell_types, day, save.path){
+    library(survminer)
+    library(survival)
+    meta.data = meta_data[,c(Cell_types,"vital_status",day)]
+    #Create a Survival Object
+    meta.data$status = plyr::mapvalues(meta.data$vital_status,
+                                             from = c("Alive","Dead","Not Reported"),
+                                             to = c(0,1, NA))
+    meta.data = meta.data[!is.na(meta.data$status),]
+    meta.data$status %<>% as.integer()
+    meta.data[,"Overall survival (year)"] = meta.data[,day]/365
+    
+    if(!dir.exists(save.path)) dir.create(save.path, recursive = T)
+    for(i in seq_along(Cell_types)) {
+        cell_type = Cell_types[i]
+        cut_function = ifelse(median(meta.data[,cell_type]) ==0, "posi_neg","high_low")
+        cut_label= switch (cut_function,
+                           "posi_neg" = c("Positive","Negative"),
+                           "high_low" = c("High","Low"))
+        if(all(meta.data[,cell_type] ==0)) next
+        meta.data[,cut_function] = switch (cut_function,
+                                           "posi_neg" = plyr::mapvalues(meta.data[,cell_type] >0,
+                                                                        from = c(TRUE,FALSE),
+                                                                        to = c("Positive","Negative")),
+                                           "high_low" = plyr::mapvalues(as.integer(cut(meta.data[,cell_type],2)),
+                                                                        from = c(1,2),
+                                                                        to = c("Low","High"))
+        )
+        fit <- switch (cut_function,
+                       "posi_neg" = survfit(Surv(`Overall survival (year)`, status) ~ posi_neg, data = meta.data),
+                       "high_low" = survfit(Surv(`Overall survival (year)`, status) ~ high_low, data = meta.data)
+        )
+        # if too little data for one side, skip
+        lvl <- sort(as.vector(table(meta.data[,cut_function])))
+        if(lvl[1] < 3 | lvl[2] < 3) next
+        g <- ggsurvplot(
+            fit,
+            censor.shape="|", censor.size = 4,
+            data = meta.data,
+            size = 1,                 # change line size
+            palette =
+                c("#E7B800", "#2E9FDF"),# custom color palettes
+            conf.int = TRUE,          # Add confidence interval
+            pval = TRUE,              # Add p-value
+            legend.title = cell_type,
+            risk.table = TRUE,        # Add risk table
+            risk.table.col = "strata",# Risk table color by groups
+            legend.labs = cut_label,    # Change legend labels
+            risk.table.height = 0.25, # Useful to change when you have multiple groups
+            ggtheme = theme_bw(),      # Change ggplot2 theme
+            xlab = "Overall survival (year)"
+        )
+        jpeg(paste0(save.path,"ggsurvplot_",cell_type,".jpeg"), units="in", width=5, height=7,res=600)
+        print(g)
+        dev.off()
+        svMisc::progress(i, length(Cell_types))
+    }
+}
+
+
 #meta_data[,"Survival rate"] = rank(meta_data$subtype_Combined.days.to.last.followup.or.death)
 # range(meta_data[,"Survival rate"]) = [?, 411]
 #meta_data[,"Survival rate"] = (meta_data[,"Survival rate"] - min(meta_data[,"Survival rate"]))/max(meta_data[,"Survival rate"])
 
-for(i in seq_along(Cell_types)) {
-    cell_type = Cell_types[i]
-    cut_function = ifelse(median(meta_data[,cell_type]) ==0, "posi_neg","high_low")
-    cut_label= switch (cut_function,
-                       "posi_neg" = c("Positive","Negative"),
-                       "high_low" = c("High","Low"))
-    if(all(meta_data[,cell_type] ==0)) next
-    meta_data[,cut_function] = switch (cut_function,
-                            "posi_neg" = plyr::mapvalues(meta_data[,cell_type] >0,
-                                                         from = c(TRUE,FALSE),
-                                                         to = c("Positive","Negative")),
-                            "high_low" = plyr::mapvalues(as.numeric(cut(meta_data[,cell_type],2)) %% 2,
-                                                         from = c(1,0),
-                                                         to = c("High","Low"))
-                            )
-    fit <- switch (cut_function,
-                   "posi_neg" = survfit(Surv(`Overall survival (year)`, status) ~ posi_neg, data = meta_data),
-                   "high_low" = survfit(Surv(`Overall survival (year)`, status) ~ high_low, data = meta_data)
-    )
-    # if too little data for one side, skip
-    lvl <- sort(as.vector(table(meta_data[,cut_function])))
-    if(lvl[1] < 3 | lvl[2] < 3) next
-    g <- ggsurvplot(
-        fit,
-        censor.shape="|", censor.size = 4,
-        data = meta_data,
-        size = 1,                 # change line size
-        palette =
-            c("#E7B800", "#2E9FDF"),# custom color palettes
-        conf.int = TRUE,          # Add confidence interval
-        pval = TRUE,              # Add p-value
-        legend.title = cell_type,
-        risk.table = TRUE,        # Add risk table
-        risk.table.col = "strata",# Risk table color by groups
-        legend.labs = cut_label,    # Change legend labels
-        risk.table.height = 0.25, # Useful to change when you have multiple groups
-        ggtheme = theme_bw(),      # Change ggplot2 theme
-        xlab = "Overall survival (year)"
-    )
-    jpeg(paste0(path,"ggsurvplot_",cell_type,".jpeg"), units="in", width=7, height=7,res=600)
-    print(g)
-    dev.off()
-    svMisc::progress(i, length(Cell_types))
-}
+
 
 
