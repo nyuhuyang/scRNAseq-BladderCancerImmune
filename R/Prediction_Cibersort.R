@@ -21,7 +21,7 @@ query.exp.BLCA <- GDCquery(project = "TCGA-BLCA",
 
 GDCdownload(query.exp.BLCA)
 exp.BLCA <- GDCprepare(query.exp.BLCA, save = FALSE)
-exp.BLCA[1:4,1:4]
+exp.BLCA
 genes = gsub("\\|.*","",rownames(assays(exp.BLCA)$raw_count))
 FPKM.BLCA <- assays(exp.BLCA)$raw_count[!duplicated(genes),]
 rownames(FPKM.BLCA) = gsub("\\|.*","",rownames(FPKM.BLCA))
@@ -31,6 +31,8 @@ colnames(FPKM.BLCA)[1] = "gene_symbol"
 FPKM.BLCA[1:4,1:4];class(FPKM.BLCA)
 data.table::fwrite(FPKM.BLCA,file =paste0(path,"TCGA-BLCA_FPKM.txt"),
                    sep = "\t",row.names = FALSE, col.names = TRUE)
+FPKM.BLCA = read.delim(file ="output/20201215/TCGA-BLCA_FPKM.txt") %>%
+    as.data.frame()
 
 
 #=======================
@@ -75,7 +77,7 @@ cibersort.BLCA.LAML = read.table("output/20201215/CIBERSORTx_Job8_Results.txt",s
 table(rowSums(cibersort.BLCA.LAML[,1:22]))
 #============ Convert to Seurat ===================
 colnames(FPKM.BLCA)[1] = "rowname"
-FPKM.BLCA %<>% column_to_rownames()
+FPKM.BLCA %<>% column_to_rownames
 BLCA_seurat <- CreateSeuratObject(counts = FPKM.BLCA, project = "TCGA-BLCA",
                                   meta.data = as.data.frame(colData(exp.BLCA)))
 BLCA_seurat@meta.data %<>% cbind(cibersort.BLCA)
@@ -92,15 +94,14 @@ BLCA_LAML_seurat@meta.data %<>% cbind(cibersort.BLCA.LAML)
 meta_data = BLCA_seurat@meta.data
 Cell_types = colnames(cibersort.BLCA)[1:22]
 meta_data = meta_data[meta_data$P.value < 0.104 ,]
-calculate_survive_curve(meta_data = meta_data, Cell_types, day = "days_to_death", 
-                        save.path = paste0(path,"P_0.104_","days_to_death/"))
+# 
 
 Remove = is.na(meta_data[,"paper_Combined.days.to.last.followup.or.death"]) |
     meta_data[,"paper_Combined.days.to.last.followup.or.death"] %in% c("[Not Available]","[Discrepancy]") |
     meta_data[,"paper_Combined.days.to.last.followup.or.death"] < 0
 meta_data = meta_data[!Remove,]
 meta_data$paper_Combined.days.to.last.followup.or.death %<>% as.integer()
-calculate_survive_curve(meta_data = meta_data, Cell_types, day = "paper_Combined.days.to.last.followup.or.death", 
+calculate_survive_curve(meta_data = meta_data, Cell_types[7], day = "paper_Combined.days.to.last.followup.or.death", 
                         save.path = paste0(path,"P_0.104_","paper_Combined.days.to.last.followup.or.death/"))
 
 

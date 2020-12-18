@@ -148,14 +148,19 @@ GGally::ggcorr(data =meta_data,
 # calculate survive curve=========
 
 
-meta.data = as.data.frame(cbind(BLCA_seurat@meta.data[,c("days_to_death",
-                                                         "subtype_Combined.days.to.last.followup.or.death",
+meta_data = as.data.frame(cbind(BLCA_seurat@meta.data[,c("subtype_Combined.days.to.last.followup.or.death",
                                                          names(cellGroups))],
                                 prop_main))
+meta_data = as.data.frame(sapply(meta_data,as.numeric))
+meta_data %<>% cbind("vital_status" = BLCA_seurat@meta.data[,"vital_status"])
+Cell_types = colnames(meta_data)[2:39]
+calculate_survive_curve(meta_data = meta_data, Cell_types, day = "subtype_Combined.days.to.last.followup.or.death", 
+                        save.path = paste0(path,"music_","subtype_Combined.days.to.last.followup.or.death/"))
 
 calculate_survive_curve <- function(meta_data, Cell_types, day, save.path){
     library(survminer)
     library(survival)
+    library(stringi)
     meta.data = meta_data[,c(Cell_types,"vital_status",day)]
     #Create a Survival Object
     meta.data$status = plyr::mapvalues(meta.data$vital_status,
@@ -193,19 +198,30 @@ calculate_survive_curve <- function(meta_data, Cell_types, day, save.path){
             censor.shape="|", censor.size = 4,
             data = meta.data,
             size = 1,                 # change line size
-            palette =
-                c("#E7B800", "#2E9FDF"),# custom color palettes
+            palette =c("#E7B800", "#2E9FDF"),# custom color palettes
             conf.int = TRUE,          # Add confidence interval
             pval = TRUE,              # Add p-value
+            pval.size = 8,
             legend.title = cell_type,
             risk.table = TRUE,        # Add risk table
             risk.table.col = "strata",# Risk table color by groups
             legend.labs = cut_label,    # Change legend labels
-            risk.table.height = 0.25, # Useful to change when you have multiple groups
-            ggtheme = theme_bw(),      # Change ggplot2 theme
-            xlab = "Overall survival (year)"
+            risk.table.height = 0.3, # Useful to change when you have multiple groups
+            risk.table.fontsize = 7,
+            ggtheme = theme_bw(base_size = 22),      # Change ggplot2 theme
+            xlab = "Overall survival (year)",
+            #
+            font.x = c(22, "plain", "black"),
+            font.y = c(22, "plain", "black"),
+            tables.theme = theme_bw(
+                base_size = 22,
+                base_family = "",
+                base_line_size = 1,
+                base_rect_size = 1
+            )
         )
-        jpeg(paste0(save.path,"ggsurvplot_",cell_type,".jpeg"), units="in", width=5, height=7,res=600)
+
+        jpeg(paste0(save.path,"ggsurvplot_",cell_type,".jpeg"), units="in", width=8.5, height=11,res=600)
         print(g)
         dev.off()
         svMisc::progress(i, length(Cell_types))
